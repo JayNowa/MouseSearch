@@ -3763,6 +3763,41 @@ document.addEventListener("DOMContentLoaded", async function () {
             .catch(() => showToast("Error saving settings.", 'danger'));
     });
 
+    document.getElementById('kindle-test-btn')?.addEventListener('click', async function () {
+        const button = this;
+        const status = {
+            alertId: 'settings-kindle-status',
+            iconId: 'settings-kindle-status-icon',
+            messageId: 'settings-kindle-status-message',
+        };
+        const payload = {};
+        ['KINDLE_EMAIL', 'KINDLE_FROM_EMAIL', 'KINDLE_SMTP_HOST', 'KINDLE_SMTP_PORT',
+            'KINDLE_SMTP_SECURITY', 'KINDLE_SMTP_USERNAME', 'KINDLE_SMTP_PASSWORD'].forEach(key => {
+            const el = document.getElementById(key);
+            if (el) payload[key] = el.value;
+        });
+        button.disabled = true;
+        setInlineConnectionStatus({ ...status, state: 'idle', message: 'Sending test email...' });
+        try {
+            const response = await fetch(`${APP_BASE}/api/settings/test-kindle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            const ok = response.ok && data.status === 'success';
+            setInlineConnectionStatus({
+                ...status,
+                state: ok ? 'success' : 'error',
+                message: data.message || `Test failed (HTTP ${response.status}).`,
+            });
+        } catch (error) {
+            setInlineConnectionStatus({ ...status, state: 'error', message: error?.message || 'Test failed.' });
+        } finally {
+            button.disabled = false;
+        }
+    });
+
     document.getElementById('organize-now-button')?.addEventListener('click', async function () {
         document.getElementById('organize-now-status-body')?.classList.remove('d-none');
         const originalHtml = this.innerHTML;
@@ -7253,6 +7288,18 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         document.getElementById('detail-torrent-link').href = data.download_link;
 
+        const kindleBtn = document.getElementById('detail-kindle-btn');
+        if (kindleBtn) {
+            const kindleEnabled = document.getElementById('KINDLE_ENABLED')?.checked;
+            const isEbook = String(data.main_cat || '') === '14';
+            kindleBtn.classList.toggle('d-none', !(kindleEnabled && isEbook));
+            kindleBtn.disabled = false;
+            kindleBtn.dataset.id = String(data.id || '');
+            kindleBtn.dataset.title = data.title || '';
+            kindleBtn.dataset.author = authors || '';
+            kindleBtn.dataset.mainCat = String(data.main_cat || '');
+        }
+
         // ============================================================
         // NEW: SYNC PROGRESS BAR ON OPEN
         // ============================================================
@@ -7286,6 +7333,36 @@ document.addEventListener("DOMContentLoaded", async function () {
         renderBookDetailsHardcover(data.hardcover_enrichment);
         scheduleBookDetailsColumnBalance();
     }
+
+    document.getElementById('detail-kindle-btn')?.addEventListener('click', async function () {
+        const button = this;
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Sending...';
+        try {
+            const mid = button.dataset.id;
+            const hash = torrentHashMap[mid] || '';
+            const response = await fetch(`${APP_BASE}/kindle/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hash,
+                    mid,
+                    title: button.dataset.title,
+                    author: button.dataset.author,
+                    main_cat: button.dataset.mainCat,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            const ok = response.ok && data.status === 'success';
+            showToast(data.message || (ok ? 'Sent to Kindle.' : `Send to Kindle failed (HTTP ${response.status}).`), ok ? 'success' : 'danger');
+        } catch (error) {
+            showToast(error?.message || 'Send to Kindle failed.', 'danger');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        }
+    });
 
     // Confirm Download Modal Action
     document.getElementById('confirm-download-btn')?.addEventListener('click', function () {

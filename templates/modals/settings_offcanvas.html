@@ -37,6 +37,12 @@
               Hardcover
             </button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="kindle-tab" data-bs-toggle="tab" data-bs-target="#kindle-pane"
+              type="button" role="tab" aria-controls="kindle-pane" aria-selected="false">
+              <i class="bi bi-tablet me-1"></i>Kindle
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -599,6 +605,118 @@
                   <div class="d-flex align-items-center gap-2">
                     <span id="settings-hardcover-status-icon" aria-hidden="true"></span>
                     <span id="settings-hardcover-status-message">Change the API key field to test Hardcover.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="tab-pane fade" id="kindle-pane" role="tabpanel" aria-labelledby="kindle-tab" tabindex="0">
+          <h6 class="text-uppercase section-title mb-3">Send to Kindle</h6>
+
+          <div class="card mb-3 border-secondary-subtle toggle-card">
+            <div
+              class="card-header border-bottom-0 bg-transparent d-flex justify-content-between align-items-center py-2 cursor-pointer noselect"
+              onclick="toggleCardSwitch('KINDLE_ENABLED')">
+              <span class="small fw-bold d-flex align-items-center">
+                <i class="bi bi-envelope-paper me-2"></i> Enable Send to Kindle by Email
+              </span>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" id="KINDLE_ENABLED" name="KINDLE_ENABLED"
+                  {% if KINDLE_ENABLED %}checked{% endif %} data-collapse-target="#collapse-kindle"
+                  onclick="event.stopPropagation()">
+              </div>
+            </div>
+            <div id="collapse-kindle" class="collapse {% if KINDLE_ENABLED %}show{% endif %}">
+              <div class="card-body border-top pt-2 pb-2">
+                <div class="form-text small mb-3">
+                  Emails finished e-books to your Kindle's <code>@kindle.com</code> address, like Calibre's
+                  "Email to Kindle". Add the sender address below to Amazon's
+                  <a href="https://www.amazon.com/hz/mycd/myx#/home/settings/payment" target="_blank"
+                    rel="noopener noreferrer">Approved Personal Document E-mail List</a>.
+                  EPUB, PDF and DOCX are supported (max 50&nbsp;MB); MOBI/AZW3 are no longer accepted by Amazon.
+                </div>
+
+                <div class="form-floating mb-3">
+                  <input type="text" class="form-control" id="KINDLE_EMAIL" name="KINDLE_EMAIL"
+                    value="{{ KINDLE_EMAIL }}" placeholder="name@kindle.com">
+                  <label for="KINDLE_EMAIL" class="small">Kindle email address(es), comma separated</label>
+                </div>
+
+                <div class="form-floating mb-3">
+                  <input type="email" class="form-control" id="KINDLE_FROM_EMAIL" name="KINDLE_FROM_EMAIL"
+                    value="{{ KINDLE_FROM_EMAIL }}" placeholder="you@example.com">
+                  <label for="KINDLE_FROM_EMAIL" class="small">Sender address (defaults to SMTP username)</label>
+                </div>
+
+                <div class="row">
+                  <div class="col-12 mb-3">
+                    <div class="form-floating">
+                      <input type="text" class="form-control" id="KINDLE_SMTP_HOST" name="KINDLE_SMTP_HOST"
+                        value="{{ KINDLE_SMTP_HOST }}" placeholder="smtp.gmail.com">
+                      <label for="KINDLE_SMTP_HOST" class="small">SMTP server</label>
+                    </div>
+                  </div>
+                  <div class="col-5 mb-3">
+                    <div class="form-floating">
+                      <input type="number" class="form-control" id="KINDLE_SMTP_PORT" name="KINDLE_SMTP_PORT"
+                        min="1" max="65535" value="{{ KINDLE_SMTP_PORT }}" placeholder="587">
+                      <label for="KINDLE_SMTP_PORT" class="small">Port</label>
+                    </div>
+                  </div>
+                  <div class="col-7 mb-3">
+                    <div class="form-floating">
+                      <select class="form-select" id="KINDLE_SMTP_SECURITY" name="KINDLE_SMTP_SECURITY">
+                        <option value="starttls" {% if KINDLE_SMTP_SECURITY == 'starttls' %}selected{% endif %}>STARTTLS</option>
+                        <option value="ssl" {% if KINDLE_SMTP_SECURITY == 'ssl' %}selected{% endif %}>SSL/TLS</option>
+                        <option value="none" {% if KINDLE_SMTP_SECURITY == 'none' %}selected{% endif %}>None</option>
+                      </select>
+                      <label for="KINDLE_SMTP_SECURITY" class="small">Encryption</label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row">
+                  <div class="col-6 mb-3">
+                    <div class="form-floating">
+                      <input type="text" class="form-control" id="KINDLE_SMTP_USERNAME" name="KINDLE_SMTP_USERNAME"
+                        value="{{ KINDLE_SMTP_USERNAME }}" placeholder="Username" autocomplete="off">
+                      <label for="KINDLE_SMTP_USERNAME" class="small">SMTP username</label>
+                    </div>
+                  </div>
+                  <div class="col-6 mb-3">
+                    <div class="form-floating">
+                      <input type="password" class="form-control" id="KINDLE_SMTP_PASSWORD" name="KINDLE_SMTP_PASSWORD"
+                        value="{{ KINDLE_SMTP_PASSWORD }}" placeholder="Password" autocomplete="off">
+                      <label for="KINDLE_SMTP_PASSWORD" class="small">SMTP password</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-text small mb-3">
+                  Gmail: <code>smtp.gmail.com</code>, port 587, STARTTLS, with an
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">app password</a>.
+                </div>
+
+                <div class="border rounded p-2 bg-body mb-3">
+                  <div class="d-flex justify-content-between align-items-center cursor-pointer noselect"
+                    onclick="toggleCardSwitch('KINDLE_AUTO_SEND')">
+                    <span class="small fw-semibold">Automatically send e-books when they finish downloading</span>
+                    <div class="form-check form-switch m-0">
+                      <input class="form-check-input" type="checkbox" id="KINDLE_AUTO_SEND" name="KINDLE_AUTO_SEND"
+                        {% if KINDLE_AUTO_SEND %}checked{% endif %} onclick="event.stopPropagation()">
+                    </div>
+                  </div>
+                </div>
+
+                <button type="button" class="btn btn-sm btn-outline-primary" id="kindle-test-btn">
+                  <i class="bi bi-send me-1"></i>Send test email
+                </button>
+                <div id="settings-kindle-status" class="alert alert-secondary small mt-3 mb-0 d-none" role="status">
+                  <div class="d-flex align-items-center gap-2">
+                    <span id="settings-kindle-status-icon" aria-hidden="true"></span>
+                    <span id="settings-kindle-status-message"></span>
                   </div>
                 </div>
               </div>
