@@ -989,10 +989,22 @@ def get_app_version():
         app.logger.warning(f"Could not read version.txt: {e}")
     return "dev" # Default fallback
 
+def compute_static_asset_version() -> str:
+    """Content hash of the app's own JS/CSS, appended to their URLs so browsers refetch them after an update."""
+    digest = hashlib.sha1()
+    for rel_path in ("js/main.js", "style.css"):
+        try:
+            digest.update((Path(app.static_folder) / rel_path).read_bytes())
+        except OSError:
+            pass
+    return digest.hexdigest()[:12]
+
+STATIC_ASSET_VERSION = compute_static_asset_version()
+
 # Inject APP_VERSION into all templates
 @app.context_processor
 def inject_version():
-    return dict(APP_VERSION=get_app_version())
+    return dict(APP_VERSION=get_app_version(), STATIC_ASSET_VERSION=STATIC_ASSET_VERSION)
     
 # Define fallback values
 FALLBACK_CONFIG = {
