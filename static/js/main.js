@@ -4792,14 +4792,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     ];
 
     const DEFAULT_RESULTS_SORT = 'quality_desc';
-    // Must match MAM_SORT_TYPES_BY_RESULTS_SORT_MODE in app.py; other modes are sorted client-side only.
-    const MAM_SORTED_RESULT_MODES = new Set([
-        'date_uploaded_desc', 'date_uploaded_asc',
-        'title_asc', 'title_desc',
-        'seeders_desc', 'seeders_asc',
-        'snatches_desc', 'snatches_asc',
-        'size_desc', 'size_asc'
-    ]);
+    // Other modes have no MAM equivalent and are sorted client-side only.
+    const MAM_SORTED_RESULT_MODES = new Set(window.mamSortedResultModes || []);
     let currentResultsSort = DEFAULT_RESULTS_SORT;
     let lastSearchMamSort = null;
     const resultJsonCache = new WeakMap();

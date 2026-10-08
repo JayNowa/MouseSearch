@@ -5596,6 +5596,7 @@ async def index():
         LANGUAGE_CHOICES=language_choices,
         LANGUAGE_MAP=language_dict,
         DEFAULT_LANGUAGE_ID=language_dict.get("English", 1),
+        MAM_SORTED_RESULT_MODES=sorted(MAM_SORT_TYPES_BY_RESULTS_SORT_MODE),
         **app.config
     )
     
