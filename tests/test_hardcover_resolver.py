@@ -2,7 +2,7 @@ import types
 import unittest
 
 from hardcover.client import HardcoverAPIError
-from hardcover.resolver import HardcoverBatchRunner
+from hardcover.resolver import HardcoverBatchRunner, HardcoverEnrichmentConfig, HardcoverResolver
 
 
 class PrefetchFailureClient:
@@ -86,6 +86,42 @@ class HardcoverBatchRunnerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(published), 1)
         self.assertEqual(published[0][2]["status"], "resolved")
+
+class TitleAuthorRetryClient:
+    """Title-only search misses the book; title + author finds it."""
+
+    def __init__(self):
+        self.searches = []
+
+    async def search(self, query, query_type="Book", per_page=5):
+        self.searches.append((query, query_type))
+        if query_type != "Book":
+            return []
+        if query == "Passengers":
+            return [{"id": 1, "title": "The Passengers", "author_names": ["John Marrs"], "release_year": 2019}]
+        if query == "Passengers Robert Silverberg":
+            return [{"id": 2, "title": "Passengers", "author_names": ["Robert Silverberg"], "release_year": 1968}]
+        return []
+
+
+class HardcoverResolverBookSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retries_book_search_with_author_before_falling_back(self):
+        client = TitleAuthorRetryClient()
+        resolver = HardcoverResolver(client, HardcoverEnrichmentConfig(match_threshold=78, concurrency=1, per_page=5))
+
+        enrichment = await resolver.enrich_result({
+            "id": "1273969",
+            "title": "Passengers",
+            "author_info": '{"1": "Robert Silverberg"}',
+        })
+
+        self.assertEqual(enrichment["query_path"], "book")
+        self.assertEqual(enrichment["hardcover"]["book_id"], 2)
+        self.assertEqual(enrichment["hardcover"]["release_year"], 1968)
+        self.assertEqual(
+            client.searches,
+            [("Passengers", "Book"), ("Passengers Robert Silverberg", "Book")],
+        )
 
 
 if __name__ == "__main__":
