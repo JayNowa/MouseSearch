@@ -4117,6 +4117,8 @@ async def client_add_torrent():
     # Kept for {Genre}/{Format}/{Category} when the path template is rendered server-side.
     catname = incoming_data.get('catname', '')
     filetype = incoming_data.get('filetype', '')
+    # Publication year (from Hardcover enrichment) for the {Year} token.
+    year = normalize_release_year(incoming_data.get('year'))
     id = incoming_data.get('id', '0')
     category = incoming_data.get('category', app.config.get("TORRENT_CLIENT_CATEGORY", ""))
     torrent_size_str = incoming_data.get('size', '0 GiB')  # e.g., "1.5 GiB"
@@ -4248,6 +4250,7 @@ async def client_add_torrent():
                 "main_cat": main_cat,
                 "catname": catname,
                 "filetype": filetype,
+                "year": year,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
@@ -4314,6 +4317,7 @@ async def client_add_torrent():
                 "main_cat": main_cat,
                 "catname": catname,
                 "filetype": filetype,
+                "year": year,
                 "download_link": download_link,
                 "custom_relative_path": custom_relative_path,
                 "custom_destination_path": custom_destination_path,
@@ -4559,19 +4563,49 @@ def format_filetype_token(filetype):
     return " ".join(p.upper() for p in parts)
 
 
+def normalize_release_year(value):
+    """Return a plausible four-digit year from a year/date value, or "". Mirrors normalizeReleaseYear() in main.js."""
+    match = re.match(r"\s*(\d{4})", str(value if value is not None else ""))
+    if not match:
+        return ""
+    year = int(match.group(1))
+    return str(year) if 1000 <= year <= 2999 else ""
+
+
+# Longest names first so "SeriesNumber" is never read as "Series" + "Number".
+RELATIVE_PATH_TOKEN_NAMES = ("SeriesNumber", "Category", "Author", "Series", "Format", "Genre", "Title", "Year")
+_REL_PATH_GROUP_RE = re.compile(r"\{([^{}]*)\}")
+_REL_PATH_TOKEN_NAME_RE = re.compile(
+    r"(?<![A-Za-z])(" + "|".join(RELATIVE_PATH_TOKEN_NAMES) + r")(?![A-Za-z])"
+)
+
+
 def build_relative_path_from_template(template, values):
     """
     Render a relative path template ("{Author}/{Genre}/{Title}") from token values.
 
-    Values are expected to be pre-sanitized. Tokens that resolve to an empty
-    string collapse away, so an unmatched {Series} does not leave an empty
-    directory level behind. Mirrors buildRelativePathFromTemplate() in main.js.
+    Values are expected to be pre-sanitized. A brace group may wrap literal text
+    around a token name ("{ - Series}", "{ (Year)}"); the whole group renders only
+    when that token has a value. Tokens that resolve to an empty string collapse
+    away, so an unmatched {Series} does not leave an empty directory level behind.
+    Mirrors buildRelativePathFromTemplate() in main.js.
     """
-    output = str(template or "").replace("\\", "/")
-    for token, value in values.items():
-        output = output.replace(token, str(value or ""))
-    output = re.sub(r"/+", "/", output).strip("/")
-    return output
+    text = str(template or "").replace("\\", "/")
+
+    def render_group(match):
+        content = match.group(1)
+        token_match = _REL_PATH_TOKEN_NAME_RE.search(content)
+        token = "{" + token_match.group(1) + "}" if token_match else None
+        if token is None or token not in values:
+            return match.group(0)
+        value = str(values.get(token) or "")
+        if not value:
+            return ""
+        return content[:token_match.start()] + value + content[token_match.end():]
+
+    output = _REL_PATH_GROUP_RE.sub(render_group, text)
+    segments = (segment.strip() for segment in output.split("/"))
+    return "/".join(segment for segment in segments if segment)
 
 
 def relative_path_tokens_from_metadata(torrent_meta):
@@ -4608,6 +4642,7 @@ def relative_path_tokens_from_metadata(torrent_meta):
         "{Genre}": clean(genre),
         "{Format}": clean(format_filetype_token(torrent_meta.get("filetype"))),
         "{Category}": clean(category),
+        "{Year}": normalize_release_year(torrent_meta.get("year")),
     }
 
 async def broadcast_payload(payload: dict):
