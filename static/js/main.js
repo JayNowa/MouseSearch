@@ -6478,12 +6478,15 @@ document.addEventListener("DOMContentLoaded", async function () {
         confirmInput.addEventListener('input', updateConfirmPathPreview);
     }
 
+    let latestSearchRequestId = 0;
+
     function performSearch(queryString, isHistoryNavigation = false, options = {}) {
         const {
             preScrollToResults = false,
             showResultsHeaderLoading = false,
             skipPostSearchScroll = false
         } = options;
+        const searchRequestId = ++latestSearchRequestId;
 
         activeSearchRequests += 1;
         refreshAppLogoState();
@@ -6511,6 +6514,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         return fetch(searchUrl)
             .then(response => response.text())
             .then(html => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = html;
                 applyCurrentResultsSort(resultsContainer);
@@ -6543,6 +6547,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 startHardcoverEnrichmentLoading(resultsContainer);
             })
             .catch(error => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 const errorText = error?.message ? `Search failed: ${error.message}` : 'Search failed.';
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = `<div class="alert alert-danger">${errorText}</div>`;
@@ -6550,6 +6555,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             .finally(() => {
                 activeSearchRequests = Math.max(0, activeSearchRequests - 1);
                 refreshAppLogoState();
+                if (searchRequestId !== latestSearchRequestId) return;
                 searchButton.disabled = false;
                 searchButton.innerHTML = SEARCH_BUTTON_DEFAULT_HTML;
             });
