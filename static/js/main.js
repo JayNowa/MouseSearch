@@ -4792,8 +4792,21 @@ document.addEventListener("DOMContentLoaded", async function () {
     ];
 
     const DEFAULT_RESULTS_SORT = 'quality_desc';
+    // Must match MAM_SORT_TYPES_BY_RESULTS_SORT_MODE in app.py; other modes are sorted client-side only.
+    const MAM_SORTED_RESULT_MODES = new Set([
+        'date_uploaded_desc', 'date_uploaded_asc',
+        'title_asc', 'title_desc',
+        'seeders_desc', 'seeders_asc',
+        'snatches_desc', 'snatches_asc',
+        'size_desc', 'size_asc'
+    ]);
     let currentResultsSort = DEFAULT_RESULTS_SORT;
+    let lastSearchMamSort = null;
     const resultJsonCache = new WeakMap();
+
+    function mamSortFor(sortMode) {
+        return MAM_SORTED_RESULT_MODES.has(sortMode) ? sortMode : 'default';
+    }
 
     function updateSortMenuUI() {
         if (resultsSortCurrent) {
@@ -5594,8 +5607,16 @@ document.addEventListener("DOMContentLoaded", async function () {
             option.addEventListener('click', () => {
                 currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
                 updateSortMenuUI();
-                applyCurrentResultsSort(resultsContainer);
-                applyHideDownloadedResultsFilter();
+                if (lastPerformedQuery !== null && mamSortFor(currentResultsSort) !== lastSearchMamSort) {
+                    // MAM only returns the first page in its own order, so a new sort needs a new search.
+                    performSearch(lastPerformedQuery, false, {
+                        showResultsHeaderLoading: true,
+                        skipPostSearchScroll: true
+                    });
+                } else {
+                    applyCurrentResultsSort(resultsContainer);
+                    applyHideDownloadedResultsFilter();
+                }
                 fetch(`${APP_BASE}/update_results_sort_mode`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -6477,7 +6498,10 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         hashToElementMap.clear();
         stopHardcoverEnrichmentPolling();
-        const searchUrl = queryString ? `${APP_BASE}/mam/search?${queryString}` : `${APP_BASE}/mam/search`;
+        const searchParams = new URLSearchParams(queryString || '');
+        searchParams.set('sort_mode', currentResultsSort);
+        const searchUrl = `${APP_BASE}/mam/search?${searchParams.toString()}`;
+        const searchMamSort = mamSortFor(currentResultsSort);
 
         if (preScrollToResults && wrapper) {
             wrapper.style.display = 'block';
@@ -6491,6 +6515,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 resultsContainer.innerHTML = html;
                 applyCurrentResultsSort(resultsContainer);
                 lastPerformedQuery = queryString;
+                lastSearchMamSort = searchMamSort;
                 localizeDates(resultsContainer);
                 applyResultDisplayFields(window.resultDisplayFields || getSelectedResultFields(), resultsContainer);
 
