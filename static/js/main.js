@@ -4796,6 +4796,9 @@ document.addEventListener("DOMContentLoaded", async function () {
     const MAM_SORTED_RESULT_MODES = new Set(window.mamSortedResultModes || []);
     let currentResultsSort = DEFAULT_RESULTS_SORT;
     let lastSearchMamSort = null;
+    let latestSearchQuery = null;
+    let requestedMamSort = null;
+    let searchAbortController = null;
     const resultJsonCache = new WeakMap();
 
     function mamSortFor(sortMode) {
@@ -5601,9 +5604,11 @@ document.addEventListener("DOMContentLoaded", async function () {
             option.addEventListener('click', () => {
                 currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
                 updateSortMenuUI();
-                if (lastPerformedQuery !== null && mamSortFor(currentResultsSort) !== lastSearchMamSort) {
+                const queryToSort = latestSearchQuery ?? lastPerformedQuery;
+                const upstreamSort = searchAbortController ? requestedMamSort : lastSearchMamSort;
+                if (queryToSort !== null && mamSortFor(currentResultsSort) !== upstreamSort) {
                     // MAM only returns the first page in its own order, so a new sort needs a new search.
-                    performSearch(lastPerformedQuery, false, {
+                    performSearch(queryToSort, false, {
                         showResultsHeaderLoading: true,
                         skipPostSearchScroll: true
                     });
@@ -6481,6 +6486,11 @@ document.addEventListener("DOMContentLoaded", async function () {
             skipPostSearchScroll = false
         } = options;
         const searchRequestId = ++latestSearchRequestId;
+        latestSearchQuery = queryString;
+        requestedMamSort = mamSortFor(currentResultsSort);
+        searchAbortController?.abort();
+        const controller = new AbortController();
+        searchAbortController = controller;
 
         activeSearchRequests += 1;
         refreshAppLogoState();
@@ -6505,12 +6515,25 @@ document.addEventListener("DOMContentLoaded", async function () {
             scrollToResultsWrapper();
         }
 
-        return fetch(searchUrl)
+        return fetch(searchUrl, { signal: controller.signal })
             .then(response => response.text())
             .then(html => {
                 if (searchRequestId !== latestSearchRequestId) return;
                 wrapper.style.display = 'block';
+                // Keep download category choices for surviving rows when only sorting.
+                const categoriesById = new Map();
+                if (lastPerformedQuery === queryString) {
+                    resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                        categoriesById.set(select.id, select.value);
+                    });
+                }
                 resultsContainer.innerHTML = html;
+                resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                    const value = categoriesById.get(select.id);
+                    if (value !== undefined && [...select.options].some(option => option.value === value)) {
+                        select.value = value;
+                    }
+                });
                 applyCurrentResultsSort(resultsContainer);
                 lastPerformedQuery = queryString;
                 lastSearchMamSort = searchMamSort;
@@ -6550,6 +6573,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 activeSearchRequests = Math.max(0, activeSearchRequests - 1);
                 refreshAppLogoState();
                 if (searchRequestId !== latestSearchRequestId) return;
+                searchAbortController = null;
                 searchButton.disabled = false;
                 searchButton.innerHTML = SEARCH_BUTTON_DEFAULT_HTML;
             });
