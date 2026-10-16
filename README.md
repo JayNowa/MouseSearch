@@ -318,7 +318,7 @@ For book enrichment only, the minimum required scope is `read:catalog:search`. L
 | `AUTO_ORGANIZE_ON_SCHEDULE` | No | Set to `true` to enable scheduled auto-organization. Defaults to `false`. |
 | `AUTO_ORGANIZE_INTERVAL_HOURS` | No | Number of hours between scheduled organization scans (only applies if `AUTO_ORGANIZE_ON_SCHEDULE` is `true`). Defaults to `1`. |
 | `AUTO_ORGANIZE_USE_COPY` | No | Set to `true` to copy files instead of hardlinking. Useful if download/organize paths are on different filesystems. Defaults to `false`. |
-| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, `{SeriesNumber}`, `{Title}`, `{Category}`, `{Genre}`, and `{Format}` tokens. Defaults to `{Author}/{Title}`. |
+| `DEFAULT_RELATIVE_PATH_TEMPLATE` | No | Default relative folder template used for organization paths. Supports `{Author}`, `{Series}`, `{SeriesNumber}`, `{Title}`, `{Category}`, `{Genre}`, `{Format}`, and `{Year}` tokens, plus optional text such as `{ - Series}` (see [Path Customization](#path-customization)). Defaults to `{Author}/{Title}`. |
 | `ORGANIZED_PATH` | If auto-organization is enabled | The default *container* path for your organized library (e.g., `/downloads/organized/`). Additional destination paths can be configured from the Settings UI and assigned to media types. |
 | `LOCAL_TORRENT_DOWNLOAD_PATH` | If auto-organization is enabled | The local path MouseSearch can access for completed torrent files (e.g., `/downloads/torrents/`). |
 | `REMOTE_TORRENT_DOWNLOAD_PATH` | No | Optional remote/client-side view of that same download directory. Recommended when your torrent client runs in a different filesystem namespace, such as Docker vs bare metal. |
@@ -470,8 +470,19 @@ MouseSearch supports configurable default organization templates via Settings ->
 | `{Category}` | Media type from the MAM category | `Audiobooks`, `Ebooks` |
 | `{Genre}` | MAM subcategory | `Science Fiction` |
 | `{Format}` | File format, uppercased | `M4B`, `EPUB MOBI` |
+| `{Year}` | Publication year from the torrent's Hardcover book match (blank when Hardcover enrichment is off or found no book) | `1965` |
 
   Tokens that have no value collapse out of the path rather than leaving an empty folder level, so `{Author}/{Series}/{Title}` yields `Frank Herbert/Dune` for a standalone book. To reproduce a `Audiobooks/Science Fiction/Frank Herbert/Dune` layout, use `{Category}/{Genre}/{Author}/{Title}`.
+
+  **Optional text:** put fixed text inside the braces, next to the token name, to include it only when that token has a value. `{prefix Token suffix}` renders as `prefix + value + suffix`, or nothing at all when the token is empty. For example, `{Author}/{Title}{ - Series}{ #SeriesNumber}{ (Year)}` yields:
+
+  | Book | Result |
+  | --- | --- |
+  | In a series, year known | `Brandon Sanderson/Oathbringer - The Stormlight Archive #3 (2017)` |
+  | Standalone, year known | `Andy Weir/Project Hail Mary (2021)` |
+  | Standalone, no year | `Andy Weir/Project Hail Mary` |
+
+  The text may include `/`, so `{Author}/{Series/}{Title}` adds a series folder only for books in a series. Leading and trailing spaces are trimmed from each folder name.
 - **Environment Default**: Set `DEFAULT_RELATIVE_PATH_TEMPLATE` in `.env` to control the default template used by the app.
 - **Per-Download Tag Builder**: When `AUTO_ORGANIZE_ON_ADD` is enabled, the download confirmation modal shows the same tag builder as Settings, seeded with your configured template and this torrent's values:
   - **Path Template** — the template for this one download. Tag buttons add a token, or remove it if it is already present; a tag with no value for this torrent (no series, no genre) is greyed out. The reset button restores your configured default.

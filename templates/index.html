@@ -516,6 +516,7 @@
   <script>
     window.resultDisplayFields = {{ RESULTS_DISPLAY_FIELDS | tojson }};
     window.resultsSortMode = {{ RESULTS_SORT_MODE | tojson }};
+    window.mamSortedResultModes = {{ MAM_SORTED_RESULT_MODES | tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/main.js', v=STATIC_ASSET_VERSION) }}"></script>
 
