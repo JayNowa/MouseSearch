@@ -94,6 +94,7 @@ class SendTests(unittest.TestCase):
     def test_sends_attachment_with_starttls_and_login(self):
         with mock.patch("kindle.smtplib.SMTP") as smtp_cls:
             server = smtp_cls.return_value.__enter__.return_value = smtp_cls.return_value
+            server.send_message.return_value = {}
             message = kindle.send_file_to_kindle(make_config(), self.book, title="My Book - Author")
 
         smtp_cls.assert_called_once_with("smtp.example.com", 587, timeout=60.0)
@@ -112,9 +113,27 @@ class SendTests(unittest.TestCase):
         config = make_config(KINDLE_SMTP_SECURITY="ssl", KINDLE_SMTP_PORT=0)
         with mock.patch("kindle.smtplib.SMTP_SSL") as smtp_ssl_cls:
             smtp_ssl_cls.return_value.__enter__.return_value = smtp_ssl_cls.return_value
+            smtp_ssl_cls.return_value.send_message.return_value = {}
             kindle.send_file_to_kindle(config, self.book)
         self.assertEqual(smtp_ssl_cls.call_args.args[:2], ("smtp.example.com", 465))
         smtp_ssl_cls.return_value.starttls.assert_not_called()
+
+    def test_partial_recipient_rejection_is_not_success(self):
+        with mock.patch("kindle.smtplib.SMTP") as smtp:
+            server = smtp.return_value
+            server.send_message.return_value = {"second@kindle.com": (550, b"rejected")}
+            with self.assertRaisesRegex(kindle.KindleSendError, "second@kindle.com") as error:
+                kindle.send_file_to_kindle(make_config(KINDLE_EMAIL="reader@kindle.com,second@kindle.com"), self.book)
+            self.assertIn("duplicates", str(error.exception))
+
+    def test_connection_does_not_send_email_or_require_recipient(self):
+        with mock.patch("kindle.smtplib.SMTP") as smtp:
+            server = smtp.return_value
+            result = kindle.test_connection(make_config(KINDLE_EMAIL="", KINDLE_FROM_EMAIL=""))
+            server.starttls.assert_called_once()
+            server.login.assert_called_once()
+            server.send_message.assert_not_called()
+            self.assertIn("No email was sent", result)
 
     def test_rejects_oversized_file(self):
         with mock.patch.object(kindle, "KINDLE_MAX_ATTACHMENT_BYTES", 3):

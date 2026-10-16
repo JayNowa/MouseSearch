@@ -3857,7 +3857,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (el) payload[key] = el.value;
         });
         button.disabled = true;
-        setInlineConnectionStatus({ ...status, state: 'idle', message: 'Sending test email...' });
+        setInlineConnectionStatus({ ...status, state: 'idle', message: 'Testing SMTP connection...' });
         try {
             const response = await fetch(`${APP_BASE}/api/settings/test-kindle`, {
                 method: 'POST',
@@ -7486,7 +7486,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             });
             const data = await response.json().catch(() => ({}));
             const ok = response.ok && data.status === 'success';
-            showToast(data.message || (ok ? 'Sent to Kindle.' : `Send to Kindle failed (HTTP ${response.status}).`), ok ? 'success' : 'danger');
+            showToast(data.message || (ok ? 'SMTP server accepted the email; Kindle delivery is not confirmed.' : `Send to Kindle failed (HTTP ${response.status}).`), ok ? 'success' : 'danger');
         } catch (error) {
             showToast(error?.message || 'Send to Kindle failed.', 'danger');
         } finally {

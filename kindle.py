@@ -106,7 +106,7 @@ def build_kindle_message(
     return message
 
 
-def send_message(config: dict, message: EmailMessage, timeout: float = 60.0) -> None:
+def send_message(config: dict, message: EmailMessage | None, timeout: float = 60.0) -> None:
     """Deliver a message with the configured SMTP server. Blocking; run in a thread."""
     host = str(config.get("KINDLE_SMTP_HOST") or "").strip()
     security = normalize_smtp_security(config.get("KINDLE_SMTP_SECURITY"))
@@ -131,7 +131,15 @@ def send_message(config: dict, message: EmailMessage, timeout: float = 60.0) -> 
                 server.ehlo()
             if username:
                 server.login(username, password)
-            server.send_message(message)
+            if message is not None:
+                refused = server.send_message(message)
+                if refused:
+                    rejected = ", ".join(refused)
+                    raise KindleSendError(
+                        f"SMTP server rejected recipient(s): {rejected}. "
+                        "Other recipients were accepted; resending to everyone may create duplicates. "
+                        "Kindle delivery is not confirmed."
+                    )
     except smtplib.SMTPAuthenticationError as exc:
         raise KindleSendError(f"SMTP login failed: {exc.smtp_error.decode(errors='replace') if isinstance(exc.smtp_error, bytes) else exc}") from exc
     except (smtplib.SMTPException, OSError) as exc:
@@ -161,21 +169,12 @@ def send_file_to_kindle(config: dict, file_path: Path, *, title: str = "") -> st
         attachment_bytes=file_path.read_bytes(),
     )
     send_message(config, message)
-    return f"Sent {file_path.name} to {', '.join(recipients)}."
+    return f"SMTP server accepted {file_path.name} for {', '.join(recipients)}. Kindle delivery is not confirmed."
 
 
-def send_test_email(config: dict) -> str:
-    problem = kindle_config_problem(config)
-    if problem:
-        raise KindleSendError(problem)
-    recipients = parse_recipients(config.get("KINDLE_EMAIL"))
-    sender = str(config.get("KINDLE_FROM_EMAIL") or config.get("KINDLE_SMTP_USERNAME") or "").strip()
-    message = build_kindle_message(
-        sender=sender,
-        recipients=recipients,
-        subject="MouseSearch test",
-        attachment_name="",
-        attachment_bytes=None,
-    )
-    send_message(config, message)
-    return f"Test email sent to {', '.join(recipients)}."
+def test_connection(config: dict) -> str:
+    """Check SMTP connection, TLS and authentication without sending an email."""
+    if not str(config.get("KINDLE_SMTP_HOST") or "").strip():
+        raise KindleSendError("SMTP server is not set.")
+    send_message(config, None)
+    return "SMTP connection successful. No email was sent; recipient acceptance and Kindle delivery were not tested."
