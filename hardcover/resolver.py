@@ -480,8 +480,14 @@ class HardcoverResolver:
                 book_queries.append(f"{cleaned_query} {author_name}")
 
             best_score = 0.0
-            for book_query in book_queries:
-                book_candidates = await self.client.search(book_query, "Book", self.config.per_page)
+            for query_index, book_query in enumerate(book_queries):
+                try:
+                    book_candidates = await self.client.search(book_query, "Book", self.config.per_page)
+                except HardcoverAPIError as exc:
+                    if query_index == 0:
+                        raise
+                    logger.warning("[HARDCOVER] Title + author retry failed; continuing fallbacks: %s", exc)
+                    continue
                 candidate, score, _ = pick_valid_candidate(
                     cleaned_query,
                     book_candidates,

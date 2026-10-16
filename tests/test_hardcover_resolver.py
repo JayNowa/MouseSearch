@@ -105,6 +105,36 @@ class TitleAuthorRetryClient:
 
 
 class HardcoverResolverBookSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retry_api_error_preserves_series_and_author_fallbacks(self):
+        for fallback_type in ("Series", "Author"):
+            for error in ("timeout: retry timed out", "http_429: rate limit exceeded"):
+                with self.subTest(fallback_type=fallback_type, error=error):
+                    class Client(TitleAuthorRetryClient):
+                        async def search(self, query, query_type="Book", per_page=5):
+                            if query == "Passengers Robert Silverberg":
+                                self.searches.append((query, query_type))
+                                raise HardcoverAPIError(error)
+                            if query_type == fallback_type:
+                                self.searches.append((query, query_type))
+                                return [{"id": 3, "name": query}]
+                            return await super().search(query, query_type, per_page)
+
+                        async def series_details(self, series_id):
+                            return {}
+
+                    client = Client()
+                    resolver = HardcoverResolver(client, HardcoverEnrichmentConfig())
+                    enrichment = await resolver.enrich_result({
+                        "title": "Passengers",
+                        "author_info": '{"1": "Robert Silverberg"}',
+                    })
+                    self.assertEqual(enrichment["query_path"], fallback_type.lower())
+                    self.assertEqual(enrichment["failure_reason"], "")
+                    expected = [("Passengers", "Book"), ("Passengers Robert Silverberg", "Book"), ("Passengers", "Series")]
+                    if fallback_type == "Author":
+                        expected.append(("Robert Silverberg", "Author"))
+                    self.assertEqual(client.searches, expected)
+
     async def test_retries_book_search_with_author_before_falling_back(self):
         client = TitleAuthorRetryClient()
         resolver = HardcoverResolver(client, HardcoverEnrichmentConfig(match_threshold=78, concurrency=1, per_page=5))
