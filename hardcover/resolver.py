@@ -472,25 +472,39 @@ class HardcoverResolver:
             if not cleaned_query:
                 return self.unresolved(result, cleaned_query, "missing_clean_title")
 
-            book_candidates = await self.client.search(cleaned_query, "Book", self.config.per_page)
-            candidate, score, _ = pick_valid_candidate(
-                cleaned_query,
-                book_candidates,
-                self.config.match_threshold,
-                author_name=author_name,
-                series_names=series_names,
-            )
-            if candidate:
-                return {
-                    "original_mam": original,
-                    "hardcover": metadata_from_search_candidate(candidate, "Book"),
-                    "match_score": score,
-                    "query_path": "book",
-                    "failure_reason": "",
-                    "cleaned_query": cleaned_query,
-                }
+            # Common titles ("Passengers") can push the right book past the first
+            # page of results, so retry with the author before settling for a
+            # series or author match.
+            book_queries = [cleaned_query]
+            if author_name:
+                book_queries.append(f"{cleaned_query} {author_name}")
 
-            best_score = score
+            best_score = 0.0
+            for query_index, book_query in enumerate(book_queries):
+                try:
+                    book_candidates = await self.client.search(book_query, "Book", self.config.per_page)
+                except HardcoverAPIError as exc:
+                    if query_index == 0:
+                        raise
+                    logger.warning("[HARDCOVER] Title + author retry failed; continuing fallbacks: %s", exc)
+                    continue
+                candidate, score, _ = pick_valid_candidate(
+                    cleaned_query,
+                    book_candidates,
+                    self.config.match_threshold,
+                    author_name=author_name,
+                    series_names=series_names,
+                )
+                if candidate:
+                    return {
+                        "original_mam": original,
+                        "hardcover": metadata_from_search_candidate(candidate, "Book"),
+                        "match_score": score,
+                        "query_path": "book",
+                        "failure_reason": "",
+                        "cleaned_query": cleaned_query,
+                    }
+                best_score = max(best_score, score)
             series_queries = [cleaned_query] + [
                 name for name in series_names
                 if name.lower() != cleaned_query.lower()
