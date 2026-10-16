@@ -50,6 +50,8 @@ class MamSearchSortRequestTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result.status_code, 200)
                     self.assertIn('No results found', await result.get_data(as_text=True))
                     self.assertEqual(upstream.call_args.kwargs['params']['tor[sortType]'], expected)
+                    self.assertEqual(upstream.call_args.kwargs['timeout'].read, 60.0)
+                    self.assertEqual(upstream.call_args.kwargs['timeout'].connect, 5.0)
 
 
 if __name__ == "__main__":

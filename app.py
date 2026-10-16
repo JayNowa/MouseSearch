@@ -5409,6 +5409,9 @@ async def mam_search():
             f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php",
             params=params,
             headers=headers,
+            # Sorting large result sets upstream can exceed the shared 15s
+            # read timeout. Keep the longer wait limited to search requests.
+            timeout=Timeout(connect=5.0, read=60.0, write=15.0, pool=None),
         )
         response.raise_for_status()
         json_data = response.json()
