@@ -442,6 +442,10 @@
                       data-token="{Format}" title="File format, e.g. M4B or EPUB">
                       <i class="bi bi-file-earmark-fill"></i> Format
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill insert-token-btn"
+                      data-token="{Year}" title="Publication year from Hardcover enrichment, e.g. 1997">
+                      <i class="bi bi-calendar3"></i> Year
+                    </button>
                     <!--
                   <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill insert-token-btn"
                     data-token="/">
@@ -449,6 +453,11 @@
                   </button>
                   -->
                   </div>
+
+                  <p class="form-text small mt-0 mb-3">
+                    Put text inside the braces to show it only when the tag has a value, e.g.
+                    <code>{Author}/{Title}{ - Series}{ #SeriesNumber}{ (Year)}</code>.
+                  </p>
 
                   <div class="alert alert-light border small m-0">
                     <div class="d-flex justify-content-between">

@@ -630,6 +630,23 @@ function getResultItemHardcoverData(resultItem) {
     }
 }
 
+/**
+ * Publication year for the {Year} path token, taken from the torrent's Hardcover
+ * book match. Series/author matches don't describe this book, so they're ignored.
+ */
+function getHardcoverReleaseYearForTorrent(torrentId, resultItem = null) {
+    let item = resultItem;
+    if (!item && torrentId) {
+        const escapedId = window.CSS && CSS.escape ? CSS.escape(String(torrentId)) : String(torrentId).replace(/["\\]/g, '\\$&');
+        item = document.querySelector(`.result-item[data-torrent-id="${escapedId}"]`);
+    }
+    const metadata = getResultItemHardcoverData(item)?.hardcover_enrichment?.hardcover;
+    if (!metadata) return '';
+    const objectType = String(metadata.object_type || '').trim().toLowerCase();
+    if (objectType && objectType !== 'book') return '';
+    return normalizeReleaseYear(metadata.release_year || metadata.release_date);
+}
+
 function updateHardcoverUserBookStateForResultItem(resultItem, userBook, { userBookKnown = true } = {}) {
     const data = getResultItemHardcoverData(resultItem);
     const normalizedUserBook = normalizeHardcoverUserBook(userBook);
@@ -1893,8 +1910,44 @@ function formatFileTypeToken(filetype) {
         .join(' ');
 }
 
+/** Return a plausible four-digit year from a year/date value, or "". Mirrors normalize_release_year() in app.py. */
+function normalizeReleaseYear(value) {
+    const match = String(value ?? '').match(/^\s*(\d{4})/);
+    if (!match) return '';
+    const year = Number(match[1]);
+    return year >= 1000 && year <= 2999 ? String(year) : '';
+}
+
+// Longest names first so "SeriesNumber" is never read as "Series" + "Number".
+const REL_PATH_TOKEN_NAME_RE = /(^|[^A-Za-z])(SeriesNumber|Category|Author|Series|Format|Genre|Title|Year)(?![A-Za-z])/;
+
+/**
+ * Find every brace group in a template. A group is either a bare token ("{Series}")
+ * or optional text wrapped around a token name ("{ - Series}", "{ (Year)}").
+ * Groups with no known token name come back with token = null.
+ */
+function parseRelPathTemplateGroups(template) {
+    const groups = [];
+    const groupRe = /\{([^{}]*)\}/g;
+    let match;
+    while ((match = groupRe.exec(template)) !== null) {
+        const content = match[1];
+        const nameMatch = REL_PATH_TOKEN_NAME_RE.exec(content);
+        const group = { start: match.index, end: match.index + match[0].length, raw: match[0], token: null };
+        if (nameMatch) {
+            const nameStart = nameMatch.index + nameMatch[1].length;
+            const name = nameMatch[2];
+            group.token = `{${name}}`;
+            group.prefix = content.slice(0, nameStart);
+            group.suffix = content.slice(nameStart + name.length);
+        }
+        groups.push(group);
+    }
+    return groups;
+}
+
 function buildRelativePathFromTemplate(template, values) {
-    let output = normalizeRelPathTemplate(template);
+    const text = normalizeRelPathTemplate(template);
     const replacements = {
         '{Author}': values.author || '',
         '{Series}': values.series || '',
@@ -1902,13 +1955,34 @@ function buildRelativePathFromTemplate(template, values) {
         '{Title}': values.title || '',
         '{Genre}': values.genre || '',
         '{Format}': values.format || '',
-        '{Category}': values.category || ''
+        '{Category}': values.category || '',
+        '{Year}': values.year || ''
     };
-    for (const [token, value] of Object.entries(replacements)) {
-        output = output.split(token).join(value);
+
+    let output = '';
+    let cursor = 0;
+    for (const group of parseRelPathTemplateGroups(text)) {
+        output += text.slice(cursor, group.start);
+        cursor = group.end;
+        if (!group.token || !(group.token in replacements)) {
+            output += group.raw;
+            continue;
+        }
+        const value = String(replacements[group.token] || '');
+        if (value) output += `${group.prefix}${value}${group.suffix}`;
     }
-    output = output.replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
-    return output;
+    output += text.slice(cursor);
+
+    return output
+        .split('/')
+        .map(segment => segment.trim())
+        .filter(Boolean)
+        .join('/');
+}
+
+/** True when the template uses a token, either bare or inside an optional group. */
+function templateHasToken(template, token) {
+    return parseRelPathTemplateGroups(normalizeRelPathTemplate(template)).some(group => group.token === token);
 }
 
 function getRelPathTemplateValue() {
@@ -1926,13 +2000,25 @@ const REL_PATH_TOKENS = [
     { token: '{Title}', key: 'title', label: 'Title' },
     { token: '{Category}', key: 'category', label: 'Category' },
     { token: '{Genre}', key: 'genre', label: 'Genre' },
-    { token: '{Format}', key: 'format', label: 'Format' }
+    { token: '{Format}', key: 'format', label: 'Format' },
+    { token: '{Year}', key: 'year', label: 'Year' }
 ];
 
-/** Remove every occurrence of a token, collapsing the folder level it leaves behind. */
+/**
+ * Remove every group that uses a token (including optional text around it, such
+ * as "{ (Year)}"), collapsing the folder level it leaves behind.
+ */
 function removeTokenFromTemplate(template, token) {
-    return normalizeRelPathTemplate(template)
-        .split(token).join('')
+    const text = normalizeRelPathTemplate(template);
+    let output = '';
+    let cursor = 0;
+    for (const group of parseRelPathTemplateGroups(text)) {
+        if (group.token !== token) continue;
+        output += text.slice(cursor, group.start);
+        cursor = group.end;
+    }
+    output += text.slice(cursor);
+    return output
         .replace(/\/+/g, '/')
         .replace(/^\/+|\/+$/g, '');
 }
@@ -3618,25 +3704,19 @@ document.addEventListener("DOMContentLoaded", async function () {
         };
 
         const previewData = {
-            '{Author}': 'J.K. Rowling',
-            '{Series}': 'Harry Potter',
-            '{SeriesNumber}': '1',
-            '{Title}': "Harry Potter and the Sorcerer's Stone",
-            '{Genre}': 'Fantasy',
-            '{Format}': 'M4B',
-            '{Category}': 'Audiobooks'
+            author: 'J.K. Rowling',
+            series: 'Harry Potter',
+            seriesNumber: '1',
+            title: "Harry Potter and the Sorcerer's Stone",
+            genre: 'Fantasy',
+            format: 'M4B',
+            category: 'Audiobooks',
+            year: '1997'
         };
 
         const updatePathPreview = () => {
             const template = relTemplateInput.value?.trim() || DEFAULT_REL_PATH_TEMPLATE;
-            let preview = template;
-
-            for (const [token, value] of Object.entries(previewData)) {
-                preview = preview.split(token).join(value);
-            }
-
-            preview = preview.replace(/\/+/g, '/');
-            previewOutput.textContent = preview;
+            previewOutput.textContent = buildRelativePathFromTemplate(template, previewData);
         };
 
         relTemplateInput.addEventListener('input', updatePathPreview);
@@ -6063,7 +6143,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (!spec) return;
 
             const value = confirmTokenValues[spec.key] || '';
-            const isActive = template.includes(spec.token);
+            const isActive = templateHasToken(template, spec.token);
 
             btn.disabled = !value && !isActive;
             btn.dataset.active = isActive ? 'true' : 'false';
@@ -6107,7 +6187,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 if (!token || btn.disabled) return;
 
                 const template = normalizeRelPathTemplate(confirmTemplateInput.value || '');
-                if (template.includes(token)) {
+                if (templateHasToken(template, token)) {
                     confirmTemplateInput.value = removeTokenFromTemplate(template, token);
                     confirmTemplateCaretRange = null;
                 } else {
@@ -6917,6 +6997,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             // server so it can render the template itself on the schedule-only path.
             catname: button.dataset.catname || '',
             filetype: button.dataset.filetype || '',
+            year: getHardcoverReleaseYearForTorrent(button.dataset.id, resultItem),
 
             // Freeleech flags (used by confirm modal UI)
             free: button.dataset.free ?? 0,
@@ -6968,7 +7049,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                     title: cleanTitle,
                     genre: cleanGenre,
                     format: cleanFormat,
-                    category: cleanCategory
+                    category: cleanCategory,
+                    year: downloadData.year
                 };
                 confirmTemplateCaretRange = null;
                 if (confirmTemplateInput) {
