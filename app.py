@@ -3647,9 +3647,15 @@ def parse_mam_metadata(json_str, is_series=False):
         return ""
     try:
         data = json.loads(json_str)
+        # Ranking may already have flattened author/narrator names. A name
+        # such as "123" is valid JSON too, but is not a metadata mapping.
+        if not isinstance(data, dict):
+            if is_series and not data:
+                return ""
+            return html.unescape(str(json_str))
         if not data:
             return ""
-        
+
         items = []
         # Series format: {"id": ["Series Name", "Book Number", Total]}
         if is_series:
