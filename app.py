@@ -142,6 +142,19 @@ RESULTS_SORT_MODES = {
     "size_asc",
 }
 DEFAULT_RESULTS_SORT_MODE = "quality_desc"
+# Modes missing here (quality, author) have no MAM equivalent and are only sorted client-side.
+MAM_SORT_TYPES_BY_RESULTS_SORT_MODE = {
+    "date_uploaded_desc": "dateDesc",
+    "date_uploaded_asc": "dateAsc",
+    "title_asc": "titleAsc",
+    "title_desc": "titleDesc",
+    "seeders_desc": "seedersDesc",
+    "seeders_asc": "seedersAsc",
+    "snatches_desc": "snatchedDesc",
+    "snatches_asc": "snatchedAsc",
+    "size_desc": "sizeDesc",
+    "size_asc": "sizeAsc",
+}
 LANGUAGE_BY_ID = {str(value): name for name, value in language_dict.items()}
 DEFAULT_SEARCH_FILTER_DEFAULTS = {
     "searchType": "all",
@@ -192,6 +205,10 @@ def normalize_results_sort_mode(value):
     if normalized in RESULTS_SORT_MODES:
         return normalized
     return DEFAULT_RESULTS_SORT_MODE
+
+
+def mam_sort_type_for_results_sort_mode(value):
+    return MAM_SORT_TYPES_BY_RESULTS_SORT_MODE.get(normalize_results_sort_mode(value), "default")
 
 
 def coerce_bool(val, default: bool) -> bool:
@@ -3630,9 +3647,15 @@ def parse_mam_metadata(json_str, is_series=False):
         return ""
     try:
         data = json.loads(json_str)
+        # Ranking may already have flattened author/narrator names. A name
+        # such as "123" is valid JSON too, but is not a metadata mapping.
+        if not isinstance(data, dict):
+            if is_series and not data:
+                return ""
+            return html.unescape(str(json_str))
         if not data:
             return ""
-        
+
         items = []
         # Series format: {"id": ["Series Name", "Book Number", Total]}
         if is_series:
@@ -5345,8 +5368,9 @@ async def mam_search():
         else:
             lang_ids = [str(language_dict.get(lang_value, 1))]
 
+    results_sort_mode = request.args.get("sort_mode") or app.config.get("RESULTS_SORT_MODE")
     params = {
-        "tor[sortType]": "default",
+        "tor[sortType]": mam_sort_type_for_results_sort_mode(results_sort_mode),
         "perpage": app.config.get("MAX_SEARCH_RESULTS", FALLBACK_CONFIG["MAX_SEARCH_RESULTS"]),
         "thumbnail": "true",
         "dlLink": "true",
@@ -5420,6 +5444,9 @@ async def mam_search():
             f"{app.config['MAM_API_URL']}/tor/js/loadSearchJSONbasic.php",
             params=params,
             headers=headers,
+            # Sorting large result sets upstream can exceed the shared 15s
+            # read timeout. Keep the longer wait limited to search requests.
+            timeout=Timeout(connect=5.0, read=60.0, write=15.0, pool=None),
         )
         response.raise_for_status()
         json_data = response.json()
@@ -5613,6 +5640,7 @@ async def index():
         LANGUAGE_CHOICES=language_choices,
         LANGUAGE_MAP=language_dict,
         DEFAULT_LANGUAGE_ID=language_dict.get("English", 1),
+        MAM_SORTED_RESULT_MODES=sorted(MAM_SORT_TYPES_BY_RESULTS_SORT_MODE),
         **app.config
     )
     

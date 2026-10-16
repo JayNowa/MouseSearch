@@ -4872,8 +4872,18 @@ document.addEventListener("DOMContentLoaded", async function () {
     ];
 
     const DEFAULT_RESULTS_SORT = 'quality_desc';
+    // Other modes have no MAM equivalent and are sorted client-side only.
+    const MAM_SORTED_RESULT_MODES = new Set(window.mamSortedResultModes || []);
     let currentResultsSort = DEFAULT_RESULTS_SORT;
+    let lastSearchMamSort = null;
+    let latestSearchQuery = null;
+    let requestedMamSort = null;
+    let searchAbortController = null;
     const resultJsonCache = new WeakMap();
+
+    function mamSortFor(sortMode) {
+        return MAM_SORTED_RESULT_MODES.has(sortMode) ? sortMode : 'default';
+    }
 
     function updateSortMenuUI() {
         if (resultsSortCurrent) {
@@ -5674,8 +5684,18 @@ document.addEventListener("DOMContentLoaded", async function () {
             option.addEventListener('click', () => {
                 currentResultsSort = option.dataset.sortMode || DEFAULT_RESULTS_SORT;
                 updateSortMenuUI();
-                applyCurrentResultsSort(resultsContainer);
-                applyHideDownloadedResultsFilter();
+                const queryToSort = latestSearchQuery ?? lastPerformedQuery;
+                const upstreamSort = searchAbortController ? requestedMamSort : lastSearchMamSort;
+                if (queryToSort !== null && mamSortFor(currentResultsSort) !== upstreamSort) {
+                    // MAM only returns the first page in its own order, so a new sort needs a new search.
+                    performSearch(queryToSort, false, {
+                        showResultsHeaderLoading: true,
+                        skipPostSearchScroll: true
+                    });
+                } else {
+                    applyCurrentResultsSort(resultsContainer);
+                    applyHideDownloadedResultsFilter();
+                }
                 fetch(`${APP_BASE}/update_results_sort_mode`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -6537,12 +6557,20 @@ document.addEventListener("DOMContentLoaded", async function () {
         confirmInput.addEventListener('input', updateConfirmPathPreview);
     }
 
+    let latestSearchRequestId = 0;
+
     function performSearch(queryString, isHistoryNavigation = false, options = {}) {
         const {
             preScrollToResults = false,
             showResultsHeaderLoading = false,
             skipPostSearchScroll = false
         } = options;
+        const searchRequestId = ++latestSearchRequestId;
+        latestSearchQuery = queryString;
+        requestedMamSort = mamSortFor(currentResultsSort);
+        searchAbortController?.abort();
+        const controller = new AbortController();
+        searchAbortController = controller;
 
         activeSearchRequests += 1;
         refreshAppLogoState();
@@ -6557,20 +6585,38 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
         hashToElementMap.clear();
         stopHardcoverEnrichmentPolling();
-        const searchUrl = queryString ? `${APP_BASE}/mam/search?${queryString}` : `${APP_BASE}/mam/search`;
+        const searchParams = new URLSearchParams(queryString || '');
+        searchParams.set('sort_mode', currentResultsSort);
+        const searchUrl = `${APP_BASE}/mam/search?${searchParams.toString()}`;
+        const searchMamSort = mamSortFor(currentResultsSort);
 
         if (preScrollToResults && wrapper) {
             wrapper.style.display = 'block';
             scrollToResultsWrapper();
         }
 
-        return fetch(searchUrl)
+        return fetch(searchUrl, { signal: controller.signal })
             .then(response => response.text())
             .then(html => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 wrapper.style.display = 'block';
+                // Keep download category choices for surviving rows when only sorting.
+                const categoriesById = new Map();
+                if (lastPerformedQuery === queryString) {
+                    resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                        categoriesById.set(select.id, select.value);
+                    });
+                }
                 resultsContainer.innerHTML = html;
+                resultsContainer.querySelectorAll('select.category-dropdown').forEach(select => {
+                    const value = categoriesById.get(select.id);
+                    if (value !== undefined && [...select.options].some(option => option.value === value)) {
+                        select.value = value;
+                    }
+                });
                 applyCurrentResultsSort(resultsContainer);
                 lastPerformedQuery = queryString;
+                lastSearchMamSort = searchMamSort;
                 localizeDates(resultsContainer);
                 applyResultDisplayFields(window.resultDisplayFields || getSelectedResultFields(), resultsContainer);
 
@@ -6598,6 +6644,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 startHardcoverEnrichmentLoading(resultsContainer);
             })
             .catch(error => {
+                if (searchRequestId !== latestSearchRequestId) return;
                 const errorText = error?.message ? `Search failed: ${error.message}` : 'Search failed.';
                 wrapper.style.display = 'block';
                 resultsContainer.innerHTML = `<div class="alert alert-danger">${errorText}</div>`;
@@ -6605,6 +6652,8 @@ document.addEventListener("DOMContentLoaded", async function () {
             .finally(() => {
                 activeSearchRequests = Math.max(0, activeSearchRequests - 1);
                 refreshAppLogoState();
+                if (searchRequestId !== latestSearchRequestId) return;
+                searchAbortController = null;
                 searchButton.disabled = false;
                 searchButton.innerHTML = SEARCH_BUTTON_DEFAULT_HTML;
             });
